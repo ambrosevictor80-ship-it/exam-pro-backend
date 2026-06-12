@@ -1,0 +1,5 @@
+[
+    {"id": 1, "question": "What is 5 + 3?", "options": {"A": "6", "B": "7", "C": "8", "D": "9"}, "answer": "C"},
+    {"id": 2, "question": "What is 10 - 4?", "options": {"A": "5", "B": "6", "C": "7", "D": "8"}, "answer": "B"},
+    {"id": 3, "question": "What is 4 × 3?", "options": {"A": "10", "B": "11", "C": "12", "D": "13"}, "answer": "C"}
+]

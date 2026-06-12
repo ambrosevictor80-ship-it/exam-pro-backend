@@ -1,352 +1,194 @@
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-const mysql = require("mysql2");
+const fs = require("fs");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-console.log("🚀 Starting backend...");
+// ========================================
+// FILE-BASED DATABASE (No MySQL needed!)
+// ========================================
+const USERS_FILE = "users.json";
+const HISTORY_FILE = "history.json";
 
-// MySQL Connection
-const db = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "",
-    database: "exam_db"
-});
+// Load data from files
+let users = [];
+let examHistory = [];
 
-db.connect((err) => {
-    if (err) {
-        console.error("❌ MySQL Error:", err.message);
-        console.log("💡 Make sure XAMPP MySQL is running!");
-        return;
+if (fs.existsSync(USERS_FILE)) {
+    users = JSON.parse(fs.readFileSync(USERS_FILE));
+}
+if (fs.existsSync(HISTORY_FILE)) {
+    examHistory = JSON.parse(fs.readFileSync(HISTORY_FILE));
+}
+
+function saveData() {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(examHistory, null, 2));
+}
+
+// ========================================
+// QUESTIONS DATA (Your 6 subjects with levels)
+// ========================================
+const questionsData = {
+    mathematics: {
+        easy: require("./questions/mathematics_easy.json"),
+        medium: require("./questions/mathematics_medium.json"),
+        hard: require("./questions/mathematics_hard.json")
+    },
+    english: {
+        easy: require("./questions/english_easy.json"),
+        medium: require("./questions/english_medium.json"),
+        hard: require("./questions/english_hard.json")
+    },
+    physics: {
+        easy: require("./questions/physics_easy.json"),
+        medium: require("./questions/physics_medium.json"),
+        hard: require("./questions/physics_hard.json")
+    },
+    biology: {
+        easy: require("./questions/biology_easy.json"),
+        medium: require("./questions/biology_medium.json"),
+        hard: require("./questions/biology_hard.json")
+    },
+    chemistry: {
+        easy: require("./questions/chemistry_easy.json"),
+        medium: require("./questions/chemistry_medium.json"),
+        hard: require("./questions/chemistry_hard.json")
+    },
+    computerscience: {
+        easy: require("./questions/computerscience_easy.json"),
+        medium: require("./questions/computerscience_medium.json"),
+        hard: require("./questions/computerscience_hard.json")
     }
-    console.log("✅ MySQL Connected!");
-    
-    // Create tables if not exists
-    db.query(`
-        CREATE TABLE IF NOT EXISTS users (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            fullname VARCHAR(255) NOT NULL,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    
-    db.query(`
-        CREATE TABLE IF NOT EXISTS mathematics_questions (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            level VARCHAR(20) NOT NULL,
-            question TEXT NOT NULL,
-            option_a VARCHAR(255) NOT NULL,
-            option_b VARCHAR(255) NOT NULL,
-            option_c VARCHAR(255) NOT NULL,
-            option_d VARCHAR(255) NOT NULL,
-            answer CHAR(1) NOT NULL
-        )
-    `);
-    
-    db.query(`
-        CREATE TABLE IF NOT EXISTS english_questions (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            level VARCHAR(20) NOT NULL,
-            question TEXT NOT NULL,
-            option_a VARCHAR(255) NOT NULL,
-            option_b VARCHAR(255) NOT NULL,
-            option_c VARCHAR(255) NOT NULL,
-            option_d VARCHAR(255) NOT NULL,
-            answer CHAR(1) NOT NULL
-        )
-    `);
-    
-    db.query(`
-        CREATE TABLE IF NOT EXISTS cs_questions (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            level VARCHAR(20) NOT NULL,
-            question TEXT NOT NULL,
-            option_a VARCHAR(255) NOT NULL,
-            option_b VARCHAR(255) NOT NULL,
-            option_c VARCHAR(255) NOT NULL,
-            option_d VARCHAR(255) NOT NULL,
-            answer CHAR(1) NOT NULL
-        )
-    `);
-    
-    db.query(`
-        CREATE TABLE IF NOT EXISTS exam_history (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            user_email VARCHAR(255) NOT NULL,
-            subject VARCHAR(50) NOT NULL,
-            level VARCHAR(20) NOT NULL,
-            score INT NOT NULL,
-            total INT NOT NULL,
-            percent INT NOT NULL,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    
-    console.log("✅ Tables ready");
-});
+};
 
 // ========================================
-// TEST ENDPOINT
+// API ENDPOINTS
 // ========================================
+
+// Test endpoint
 app.get("/api/test", (req, res) => {
     res.json({ message: "Backend is working!" });
 });
 
-// ========================================
-// SIGNUP
-// ========================================
+// Signup
 app.post("/api/signup", async (req, res) => {
-    console.log("📝 Signup:", req.body);
     const { fullname, email, password } = req.body;
     
-    if (!fullname || !email || !password) {
-        return res.status(400).json({ error: "All fields required" });
+    if (users.find(u => u.email === email)) {
+        return res.status(400).json({ error: "Email already registered" });
     }
     
-    db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        
-        if (results.length > 0) {
-            return res.status(400).json({ error: "Email already exists" });
-        }
-        
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        db.query(
-            "INSERT INTO users (fullname, email, password) VALUES (?, ?, ?)",
-            [fullname, email, hashedPassword],
-            (err, result) => {
-                if (err) return res.status(500).json({ error: "Database error" });
-                console.log("✅ User created:", email);
-                res.json({ message: "Account created successfully!" });
-            }
-        );
+    const hashedPassword = await bcrypt.hash(password, 10);
+    users.push({
+        id: users.length + 1,
+        fullname,
+        email,
+        password: hashedPassword,
+        created_at: new Date().toISOString()
     });
+    saveData();
+    res.json({ message: "Account created successfully!" });
 });
 
-// ========================================
-// LOGIN
-// ========================================
-app.post("/api/login", (req, res) => {
-    console.log("🔐 Login:", req.body);
+// Login
+app.post("/api/login", async (req, res) => {
     const { email, password } = req.body;
+    const user = users.find(u => u.email === email);
     
-    if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
+    if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
     }
     
-    db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        
-        if (results.length === 0) {
-            return res.status(401).json({ error: "Invalid email or password" });
-        }
-        
-        const user = results[0];
-        const validPassword = await bcrypt.compare(password, user.password);
-        
-        if (!validPassword) {
-            return res.status(401).json({ error: "Invalid email or password" });
-        }
-        
-        console.log("✅ User logged in:", email);
-        res.json({
-            message: "Login successful!",
-            user: { fullname: user.fullname, email: user.email }
-        });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+        return res.status(401).json({ error: "Invalid email or password" });
+    }
+    
+    res.json({
+        message: "Login successful!",
+        user: { fullname: user.fullname, email: user.email }
     });
 });
 
-// ========================================
-// GET QUESTIONS - FIXED ENDPOINT
-// ========================================
+// Get questions
 app.get("/questions/:subject/:level", (req, res) => {
-    const subject = req.params.subject;
-    const level = req.params.level;
+    const { subject, level } = req.params;
     
-    console.log(`📥 GET /questions/${subject}/${level}`);
-    
-    let tableName = "";
-    if (subject === "mathematics") tableName = "mathematics_questions";
-    else if (subject === "english") tableName = "english_questions";
-    else if (subject === "computerscience") tableName = "cs_questions";
-    else if (subject === "physics") tableName = "physics_questions";
-else if (subject === "biology") tableName = "biology_questions";
-else if (subject === "chemistry") tableName = "chemistry_questions";
-    else {
-        return res.status(400).json({ error: "Invalid subject" });
+    if (!questionsData[subject] || !questionsData[subject][level]) {
+        return res.status(404).json({ error: "Questions not found" });
     }
     
-    const query = `SELECT * FROM ${tableName} WHERE level = ?`;
-    
-    db.query(query, [level], (err, results) => {
-        if (err) {
-            console.error("❌ DB Error:", err);
-            return res.status(500).json({ error: "Database error", details: err.message });
-        }
-        
-        console.log(`📤 Found ${results.length} questions for ${subject}/${level}`);
-        
-        if (results.length === 0) {
-            return res.json([]);
-        }
-        
-        // Format for frontend
-        const formatted = results.map(q => ({
-            id: q.id,
-            subject: subject,
-            question: q.question,
-            options: {
-                A: q.option_a,
-                B: q.option_b,
-                C: q.option_c,
-                D: q.option_d
-            },
-            answer: q.answer
-        }));
-        
-        res.json(formatted);
-    });
+    res.json(questionsData[subject][level]);
 });
 
-// ========================================
-// SUBMIT EXAM
-// ========================================
-// SUBMIT EXAM
+// Submit exam
 app.post("/submit", (req, res) => {
-    console.log("📥 Submit received:", req.body);
-    
     const { answers, subject, level, userEmail } = req.body;
     
-    // Check if answers is empty
-    if (!answers || answers.length === 0) {
-        console.log("❌ No answers provided!");
-        return res.status(400).json({ error: "No answers provided" });
-    }
+    const questions = questionsData[subject][level];
     
-    let tableName = "";
-    if (subject === "mathematics") tableName = "mathematics_questions";
-    else if (subject === "english") tableName = "english_questions";
-    else if (subject === "computerscience") tableName = "cs_questions";
-    else if (subject === "physics") tableName = "physics_questions";
-else if (subject === "biology") tableName = "biology_questions";
-else if (subject === "chemistry") tableName = "chemistry_questions";
-    else {
-        return res.status(400).json({ error: "Invalid subject" });
-    }
-    
-    const questionIds = answers.map(a => a.id);
-    
-    // Check if questionIds is empty
-    if (questionIds.length === 0) {
-        console.log("❌ No question IDs found!");
-        return res.status(400).json({ error: "No question IDs" });
-    }
-    
-    const placeholders = questionIds.map(() => '?').join(',');
-    const query = `SELECT id, answer FROM ${tableName} WHERE id IN (${placeholders})`;
-    
-    console.log("Query:", query);
-    console.log("Question IDs:", questionIds);
-    
-    db.query(query, questionIds, (err, results) => {
-        if (err) {
-            console.error("❌ Submit error:", err);
-            return res.status(500).json({ error: "Database error", details: err.message });
+    let score = 0;
+    answers.forEach(userAnswer => {
+        const q = questions.find(q => q.id === userAnswer.id);
+        if (q && q.answer === userAnswer.answer) {
+            score++;
         }
-        
-        let score = 0;
-        answers.forEach(userAnswer => {
-            const correct = results.find(r => r.id === userAnswer.id);
-            if (correct && correct.answer === userAnswer.answer) {
-                score++;
-            }
+    });
+    
+    const total = questions.length;
+    const percent = Math.round((score / total) * 100);
+    
+    if (userEmail) {
+        examHistory.push({
+            user_email: userEmail,
+            subject,
+            level,
+            score,
+            total,
+            percent,
+            date: new Date().toISOString()
         });
-        
-        const total = answers.length;
-        const percent = Math.round((score / total) * 100);
-        
-        console.log(`Score: ${score}/${total} (${percent}%)`);
-        
-        // Save to exam history
-        if (userEmail) {
-            const historyQuery = "INSERT INTO exam_history (user_email, subject, level, score, total, percent) VALUES (?, ?, ?, ?, ?, ?)";
-            db.query(historyQuery, [userEmail, subject, level, score, total, percent], (err, result) => {
-                if (err) {
-                    console.error("❌ Error saving history:", err);
-                } else {
-                    console.log("✅ History saved for:", userEmail);
-                }
-            });
-        }
-        
-        let message = percent >= 70 ? "Great job!" : "Keep practicing!";
-        if (percent === 100) message = "Perfect score! Excellent!";
-        
-        res.json({ score, total, percent, message });
-    });
+        saveData();
+    }
+    
+    let message = percent >= 70 ? "Great job!" : "Keep practicing!";
+    if (percent === 100) message = "Perfect score! Excellent!";
+    
+    res.json({ score, total, percent, message });
 });
-// ========================================
-// GET HISTORY
-// ========================================
+
+// Get history
 app.get("/api/history/:email", (req, res) => {
-    const email = req.params.email;
-    db.query(
-        "SELECT * FROM exam_history WHERE user_email = ? ORDER BY date DESC",
-        [email],
-        (err, results) => {
-            if (err) return res.status(500).json({ error: "Database error" });
-            res.json(results || []);
-        }
-    );
+    const history = examHistory.filter(h => h.user_email === req.params.email);
+    res.json(history);
 });
 
-// ========================================
-// ADMIN ENDPOINTS
-// ========================================
-
-// Get all users (Admin)
+// Admin endpoints
 app.get("/api/admin/users", (req, res) => {
-    db.query("SELECT id, fullname, email, created_at FROM users ORDER BY id DESC", (err, results) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json(results);
-    });
+    const safeUsers = users.map(u => ({
+        id: u.id,
+        fullname: u.fullname,
+        email: u.email,
+        created_at: u.created_at
+    }));
+    res.json(safeUsers);
 });
 
-// Get all exam history (Admin)
 app.get("/api/admin/history", (req, res) => {
-    db.query("SELECT * FROM exam_history ORDER BY date DESC", (err, results) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json(results);
-    });
+    res.json(examHistory);
 });
 
-// Get leaderboard (Admin)
-app.get("/api/admin/leaderboard", (req, res) => {
-    db.query(`
-        SELECT user_email, MAX(percent) as best_score, subject, level, date 
-        FROM exam_history 
-        GROUP BY user_email 
-        ORDER BY best_score DESC 
-        LIMIT 10
-    `, (err, results) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json(results);
-    });
+// Root endpoint
+app.get("/", (req, res) => {
+    res.send("🎉 Exam Pro API is running! Use /api/test to verify.");
 });
-// ========================================
-// START SERVER
-// ========================================
-const PORT = 5000;
+
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`\n✅ Server running on http://localhost:${PORT}`);
-    console.log(`📝 Test: http://localhost:${PORT}/api/test`);
-    console.log(`📝 Questions: http://localhost:${PORT}/questions/mathematics/easy`);
-    console.log(`\n`);
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`📚 Questions loaded for 6 subjects with 3 levels each`);
 });
